@@ -1,0 +1,27 @@
+{
+	"R1": {
+		"configuration": {
+			"routerID": "R1",
+			"portSend": "12_000",
+			"portListen": "12_001",
+			"updateFreq": 5
+			},
+		"routeTable": {
+			"R1": {
+				"dist": 0,
+				"nxtHop": "R1",
+				"descr": "s"
+			},
+			"R2": {
+				"dist": 2,
+				"nxtHop": "R2",
+				"descr": "n"
+			},
+			"R3": {
+				"dist": 8,
+				"nxtHop": "R3",
+				"descr": "n"
+			}
+		}		
+	}
+}
