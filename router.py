@@ -1,201 +1,199 @@
 #!python3
-#router.py - router
+# router.py - router/ listens on configured port and sends updates to configured neighbors
 
-import socket, json, sys, time
+import json
+import socket
+import sys
+import time
 from threading import Thread
 from math import inf
 
-#used to listen for updates
+
 class Server(Thread):
+    # listen for server updates
     def __init__(self, rID):
         super(Server, self).__init__()
         self.rID = rID
         self.host = '127.0.0.1'
-        self.configData = getConfig(self.rID)
-        self.port = int(self.configData['portListen'])
-        self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.routeTable = getRouteTable(rID)
-        self.staticTable = getRouteTable(rID)
+        self.config_data = get_config(self.rID)
+        self.port = int(self.config_data['portListen'])
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.route_table = get_route_table(rID)
+        self.static_table = get_route_table(rID)
 
     def run(self):
-        self.serverSocket.bind((self.host, self.port))
-        self.timeOut = {}
+        self.server_socket.bind((self.host, self.port))
+        self.timeout = {}
 
-        for router in self.routeTable:
-            if self.routeTable[router]['descr'] == 'n':
-                self.timeOut[router] = [time.time(), 'active']
+        for router in self.route_table:
+            if self.route_table[router]['descr'] == 'n':
+                self.timeout[router] = [time.time(), 'active']
 
         while True:
-            data, clientAddr = self.serverSocket.recvfrom(512)
+            data, client_address = self.server_socket.recvfrom(512)
 
-            ## Lock self.routeTable ##
+            # lock self.routeTable
             message = json.loads(data.decode())
 
-            #get sender
             for router in message:
+                # router is itself
                 if message[router]['descr'] == 's':
                     sender = router
                     break
 
             print(f'message: {sender}')
             
-            self.evalTimeout(sender)
-            self.computeRoutes(message, sender)
-            ## unlock self.routeTable ##
+            self.eval_timeout(sender)
+            self.compute_routes(message, sender)
+            #unlock self.routeTable
 
-    #distanceVector algorithm
-    def computeRoutes(self, nTable, sender):
+    def compute_routes(self, n_table, sender):
+        # distance vector algorithm
+        dist = self.static_table[sender]['dist']  # configured distance from sender to neighbor
 
-        dist = self.staticTable[sender]['dist']  #  <----Original neighbor(sender) distance
+        for route in self.route_table:
+            if route in self.timeout:
+                if self.timeout[route][1] == 'inactive':
+                    self.route_table[route]['dist'] = inf
 
-        for route in self.routeTable:
-            if route in self.timeOut:
-                if self.timeOut[route][1] == 'inactive':
-                    self.routeTable[route]['dist'] = inf
-
-        for dest in nTable:
-            #dont compute your own route table
+        for dest in n_table:
+            # don't compute your own route table
             if sender == self.rID:
                 break
         
-            #don't trust if i'm the next hop
-            if nTable[dest]['nxtHop'] == self.rID:
+            # don't trust if this router is the next hop
+            if n_table[dest]['nxtHop'] == self.rID:
                 continue
 
-            #add items not in rTable          I1
-            if dest not in self.routeTable:
-                self.routeTable[dest] = {'dist': (dist + nTable[dest]['dist']), 'nxtHop': sender, 'descr': 'e'}
+            # add items not in route_table
+            if dest not in self.route_table:
+                self.route_table[dest] = {'dist': (dist + n_table[dest]['dist']), 'nxtHop': sender, 'descr': 'e'}
 
 
-            #Is route a neighbor?
-            if dest in self.timeOut:
-                if self.timeOut[dest][1] == 'active': 
-                    #Yes: Is the route shorter than the current route?
-                    if (nTable[dest]['dist'] + dist) < self.routeTable[dest]['dist']:
-                        #Yes: Accept route
-                        self.routeTable[dest] = {'dist': (dist + nTable[dest]['dist']), 'nxtHop': sender, 'descr': 'e'}
-
-                    #Yes: Is the original route shorter than the current route?
-                    if self.staticTable[dest]['dist'] < self.routeTable[dest]['dist']:
-                        #yes: use original route
-                        self.routeTable[dest] = self.staticTable[dest]
-
-                #No: Use original route from staticTable (assign infite dist) and continue
+            # is route a neighbor?
+            if dest in self.timeout:
+                if self.timeout[dest][1] == 'active': 
+                    # is route shorter than the current route?
+                    if (n_table[dest]['dist'] + dist) < self.route_table[dest]['dist']:
+                        # accept route
+                        self.route_table[dest] = {'dist': (dist + n_table[dest]['dist']), 'nxtHop': sender, 'descr': 'e'}
+                    # is original route shorter than the current route?
+                    if self.static_table[dest]['dist'] < self.route_table[dest]['dist']:
+                        # use original route
+                        self.route_table[dest] = self.static_table[dest]
+                # use original route from staticTable (assign infite dist) and continue
                 else:
-                    self.routeTable[dest] = {'dist': inf, 'nxtHop': self.staticTable[dest]['nxtHop'], 'descr': 'n'}
+                    self.route_table[dest] = {'dist': inf, 'nxtHop': self.static_table[dest]['nxtHop'], 'descr': 'n'}
 
             else:
-                #destination unreachable?
-                if nTable[dest]['dist'] == inf:
-                    self.routeTable[dest] = {'dist': inf, 'nxtHop': sender, 'descr': 'e'}
-            
-                #Is the route shorter than the current route?
-                elif (nTable[dest]['dist'] + dist) < self.routeTable[dest]['dist']:
-                    #Yes: Accept Route
-                    self.routeTable[dest] = {'dist': (nTable[dest]['dist'] + dist), 'nxtHop': sender, 'descr': 'e'}
+                # is destination unreachable?
+                if n_table[dest]['dist'] == inf:
+                    self.route_table[dest] = {'dist': inf, 'nxtHop': sender, 'descr': 'e'}
+                # is proposed route shorter than current route?
+                elif (n_table[dest]['dist'] + dist) < self.route_table[dest]['dist']:
+                    # accept route
+                    self.route_table[dest] = {'dist': (n_table[dest]['dist'] + dist), 'nxtHop': sender, 'descr': 'e'}
 
+    def eval_timeout(self, sender):
+        # reset sender clock
+        # every time an n_table comes change to active/ reset clock
 
-    #evaluate timeouts
-    def evalTimeout(self, sender):
-        #resent sender clock: every time an nTable comes- change to active/ reset clock
         if sender != self.rID:
-            self.timeOut[sender][0] = time.time()
+            self.timeout[sender][0] = time.time()
 
-        #check other entries - assign inactivity
-        for entry in self.timeOut:
-            if time.time() > (self.timeOut[entry][0] + 10):
-                self.timeOut[entry][1] = 'inactive'
+        # check other entries - assign inactivity
+        for entry in self.timeout:
+            if time.time() > (self.timeout[entry][0] + 10):
+                self.timeout[entry][1] = 'inactive'
             else:
-                self.timeOut[entry][1] = 'active'
+                self.timeout[entry][1] = 'active'
         
-        for route in self.routeTable:
-            nxtHop = self.routeTable[route]['nxtHop']
-            if nxtHop in self.timeOut:
-                if self.timeOut[nxtHop][1] == 'inactive':
-                    self.routeTable[route]['dist'] = inf
+        for route in self.route_table:
+            next_hop = self.route_table[route]['nxtHop']
+            if next_hop in self.timeout:
+                if self.timeout[next_hop][1] == 'inactive':
+                    self.route_table[route]['dist'] = inf
 
     def changeTable(self):
-        global routeTable
-        routeTable = self.routeTable
+        global route_table
+        route_table = self.route_table
 
 
-
-#used to send updates
 class Client(Thread):
+    # send routetable updates to neighbors
     def __init__(self, rID):
         super(Client, self).__init__()
         self.rID = rID
-        self.configData = getConfig(self.rID)
-        self.port = int(self.configData['portSend'])
+        self.config_data = get_config(self.rID)
+        self.port = int(self.config_data['portSend'])
         self.host = '127.0.0.1'
-        self.clientSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.clientSocket.bind((self.host, self.port))
-        self.staticTable = getRouteTable(self.rID)
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.client_socket.bind((self.host, self.port))
+        self.static_table = get_route_table(self.rID)
 
     def sendTable(self):
         
-        global routeTable
-        for router in self.staticTable:
-            #send table to neighbors only
-            if routeTable[router]['descr'] == 'n' or 's':
-                self.sendTo(router)
+        global route_table
+        for router in self.static_table:
+            # send table to neighbors only
+            if route_table[router]['descr'] == 'n' or 's':
+                self.send_to(router)
             else:
                 continue
         
+    def send_to(self, nID):
+        # send table to neighor
+        server = (self.host, self.get_neighbor(nID))
 
-    def sendTo(self, nID):
-        server = (self.host, self.getNeighbor(nID))
+        message = json.dumps(route_table)
+        self.client_socket.sendto(message.encode(), server)
 
-        message = json.dumps(routeTable)
-        self.clientSocket.sendto(message.encode(), server)
-
-
-    def getNeighbor(self, nID):
-        return int(getConfig(nID)['portListen'])
+    def get_neighbor(self, nID):
+        # get neightbor listening port
+        return int(get_config(nID)['portListen'])
 
 
-
-#retrieve configData
-def getConfig(rID):
-    configFile = input('Enter configFile: ')
-    #configFile = f'/Users/BillyBuehl/Dropbox/ITS_6250/finalProject/configFiles/{rID}_config.json'
-    with open(configFile, 'r') as f:
+def get_config(rID):
+    # retrieve configuration data for router
+    config_file = f'configFiles/{rID}_config.json'
+    with open(config_file, 'r') as f:
         data = json.load(f)
 
     return(data[rID]['configuration'])
 
-#retrieve routeTable
-def getRouteTable(rID):
-    configFile = input('Enter configFile: ')
-    #configFile = f'/Users/BillyBuehl/Dropbox/ITS_6250/finalProject/configFiles/{rID}_config.json'
-    with open(configFile, 'r') as f:
+def get_route_table(rID):
+    # retrieve route table for router
+    config_file = f'configFiles/{rID}_config.json'
+    with open(config_file, 'r') as f:
         data = json.load(f)
 
     return(data[rID]['routeTable'])
 
-def output(rTable):
-    for route in rTable:
-        print('{} | {} | {} | {}'.format(route, str(rTable[route]['dist']), rTable[route]['nxtHop'], rTable[route]['descr']))
+def output(route_table):
+    # print formatted output
+    for route in route_table:
+        print('{} | {} | {} | {}'.format(route, str(route_table[route]['dist']), route_table[route]['nxtHop'], route_table[route]['descr']))
 
 
-##### START APP #####
-try:
-    rID = sys.argv[1]
-except:
-    rID = input('Router ID: ')
+if __name__ == '__main__':
+    ##### START APP #####
+    try:
+        rID = sys.argv[1]
+    except:
+        rID = input('Router ID: ')
 
 
-routeTable = getRouteTable(rID)
+    route_table = get_route_table(rID)
 
-t1 = Server(rID)
-t2 = Client(rID)
+    t1 = Server(rID)
+    t2 = Client(rID)
 
-t2.start()
-t1.start()
+    t2.start()
+    t1.start()
 
 
-while True:
-    output(routeTable)
-    t2.sendTable()
-    t1.changeTable()
-    time.sleep(5)
+    while True:
+        output(route_table)
+        t2.sendTable()
+        t1.changeTable()
+        time.sleep(5)
