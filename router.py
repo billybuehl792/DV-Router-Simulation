@@ -164,8 +164,12 @@ def get_config(rID):
 def get_route_table(rID):
     # retrieve route table for router
     config_file = f'configFiles/{rID}_config.json'
-    with open(config_file, 'r') as f:
-        data = json.load(f)
+    try:
+        with open(config_file, 'r') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print('Router does not exist.')
+        sys.exit()
 
     return(data[rID]['routeTable'])
 
@@ -176,22 +180,24 @@ def output(route_table):
 
 
 if __name__ == '__main__':
-    ##### START APP #####
+    # start app
     try:
         rID = sys.argv[1]
     except:
         rID = input('Router ID: ')
 
-
+    # retrieve route table
     route_table = get_route_table(rID)
 
+    # server and client
     t1 = Server(rID)
     t2 = Client(rID)
 
+    # start client and server
     t2.start()
     t1.start()
 
-
+    # run app
     while True:
         output(route_table)
         t2.sendTable()
