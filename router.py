@@ -1,5 +1,5 @@
 #!python3
-# router.py - router/ listens on configured port and sends updates to configured neighbors
+# router.py - listens on configured port and sends updates to configured neighbors
 
 import json
 import socket
@@ -8,8 +8,8 @@ import time
 from threading import Thread
 from math import inf
 
-
 class Server(Thread):
+
     # listen for server updates
     def __init__(self, rID):
         super(Server, self).__init__()
@@ -26,10 +26,12 @@ class Server(Thread):
         self.timeout = {}
 
         for router in self.route_table:
+
             if self.route_table[router]['descr'] == 'n':
                 self.timeout[router] = [time.time(), 'active']
 
         while True:
+
             data, client_address = self.server_socket.recvfrom(512)
 
             # lock self.routeTable
@@ -48,6 +50,7 @@ class Server(Thread):
             #unlock self.routeTable
 
     def compute_routes(self, n_table, sender):
+
         # distance vector algorithm
         dist = self.static_table[sender]['dist']  # configured distance from sender to neighbor
 
@@ -120,6 +123,7 @@ class Server(Thread):
 
 
 class Client(Thread):
+
     # send routetable updates to neighbors
     def __init__(self, rID):
         super(Client, self).__init__()
@@ -134,6 +138,7 @@ class Client(Thread):
     def sendTable(self):
         
         global route_table
+
         for router in self.static_table:
             # send table to neighbors only
             if route_table[router]['descr'] == 'n' or 's':
@@ -154,16 +159,18 @@ class Client(Thread):
 
 
 def get_config(rID):
+
     # retrieve configuration data for router
-    config_file = f'configFiles/{rID}_config.json'
+    config_file = f'config/{rID}_config.json'
     with open(config_file, 'r') as f:
         data = json.load(f)
 
     return(data[rID]['configuration'])
 
 def get_route_table(rID):
+
     # retrieve route table for router
-    config_file = f'configFiles/{rID}_config.json'
+    config_file = f'config/{rID}_config.json'
     try:
         with open(config_file, 'r') as f:
             data = json.load(f)
@@ -180,6 +187,7 @@ def output(route_table):
 
 
 if __name__ == '__main__':
+    
     # start app
     try:
         rID = sys.argv[1]
